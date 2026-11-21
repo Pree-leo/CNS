@@ -2,8 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>DSA File Integrity Verifier</title>
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#182455">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="/static/icon-192.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -609,9 +614,14 @@
         <p>Digital signatures for tamper detection</p>
       </div>
     </div>
-    <div class="status-capsule">
-      <div class="status-dot"></div>
-      <span>Engine Active</span>
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <button id="mobile-install-btn" class="btn btn-secondary" style="display: none; padding: 6px 14px; font-size: 0.8rem;" onclick="installPWA()">
+        &#128241; Install on Phone
+      </button>
+      <div class="status-capsule">
+        <div class="status-dot"></div>
+        <span>Engine Active</span>
+      </div>
     </div>
   </header>
 
@@ -1115,6 +1125,31 @@
         fetchHistory();
       } catch (e) {
         alert('Clear history failed: ' + e);
+      }
+    }
+
+    // PWA Service Worker Registration
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/static/sw.js').catch(err => console.log('SW registration:', err));
+      });
+    }
+
+    // Mobile PWA Install Prompt
+    let deferredPrompt = null;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      const btn = document.getElementById('mobile-install-btn');
+      if (btn) btn.style.display = 'inline-flex';
+    });
+
+    function installPWA() {
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        deferredPrompt.userChoice.then(() => { deferredPrompt = null; });
+      } else {
+        alert('To download/install on your phone:\n\n- Android (Chrome): Tap the 3 dots (⋮) in the top-right -> Tap "Install App" or "Add to Home screen".\n\n- iPhone (Safari): Tap the Share icon at the bottom -> Tap "Add to Home Screen".\n\nThis adds the standalone app icon to your phone with full-screen access.');
       }
     }
 
