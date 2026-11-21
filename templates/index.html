@@ -1,0 +1,1102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DSA File Integrity Verifier</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-app: #f7f9fc;
+      --card-bg: #ffffff;
+      --card-border: #e2e8f0;
+      --card-border-hover: #cbd5e1;
+      --header-c1: #182455;
+      --header-c2: #2b47aa;
+      --nav-track: #edf2f7;
+      --text-main: #192238;
+      --text-sub: #4c5973;
+      --text-muted: #738096;
+      --primary: #2454db;
+      --primary-hover: #1b42b5;
+      --primary-pressed: #14328c;
+      --primary-light: #eef3ff;
+      --success: #15803d;
+      --success-bg: #f0fdf4;
+      --success-border: #bbf7d0;
+      --alert: #b91c1c;
+      --alert-bg: #fef2f2;
+      --alert-border: #fecaca;
+      --pill-bg: #f1f4f9;
+      --pill-border: #dde3ea;
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
+      --radius-full: 9999px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-app);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* HEADER */
+    .app-header {
+      background: linear-gradient(135deg, var(--header-c1) 0%, var(--header-c2) 100%);
+      color: white;
+      padding: 16px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 4px 20px rgba(24, 36, 85, 0.15);
+    }
+
+    .brand-wrap {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .shield-icon {
+      width: 40px;
+      height: 40px;
+      background: rgba(255, 255, 255, 0.12);
+      border-radius: var(--radius-full);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 16px rgba(255, 255, 255, 0.1);
+    }
+
+    .shield-icon svg {
+      width: 22px;
+      height: 22px;
+      fill: none;
+      stroke: #ffffff;
+      stroke-width: 2.2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .brand-titles h1 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+
+    .brand-titles p {
+      font-size: 0.8rem;
+      color: #d5deff;
+      margin-top: 1px;
+    }
+
+    .status-capsule {
+      background: #1e327a;
+      border: 1px solid #3b52ad;
+      border-radius: var(--radius-full);
+      padding: 6px 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #e2e8f0;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      background: #34d399;
+      border-radius: 50%;
+      box-shadow: 0 0 8px #34d399;
+    }
+
+    /* MAIN CONTAINER */
+    .app-container {
+      max-width: 1040px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 22px 24px;
+      flex: 1;
+    }
+
+    /* SEGMENTED NAVIGATION PILLS */
+    .nav-bar {
+      background: var(--nav-track);
+      border-radius: var(--radius-full);
+      padding: 4px;
+      display: inline-flex;
+      gap: 4px;
+      margin-bottom: 20px;
+      box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.04);
+      flex-wrap: wrap;
+    }
+
+    .nav-tab-btn {
+      background: transparent;
+      border: none;
+      outline: none;
+      padding: 8px 18px;
+      border-radius: var(--radius-full);
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: var(--text-sub);
+      cursor: pointer;
+      transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .nav-tab-btn:hover {
+      color: var(--text-main);
+      background: rgba(255, 255, 255, 0.6);
+    }
+
+    .nav-tab-btn:active {
+      transform: translateY(1.5px);
+    }
+
+    .nav-tab-btn.active {
+      background: var(--card-bg);
+      color: var(--primary);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    }
+
+    /* TAB CONTENT */
+    .tab-content {
+      display: none;
+      animation: fadeIn 0.22s ease-out;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(3px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* CARDS */
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-md);
+      padding: 22px;
+      margin-bottom: 16px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+      transition: border-color 0.18s ease;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 3px 9px;
+      border-radius: var(--radius-full);
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .badge-blue { background: var(--primary-light); color: var(--primary); }
+    .badge-green { background: var(--success-bg); color: var(--success); }
+    .badge-purple { background: #f5f3ff; color: #7c3aed; }
+    .badge-red { background: var(--alert-bg); color: var(--alert); }
+
+    .card-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .card-subtitle {
+      font-size: 0.88rem;
+      color: var(--text-sub);
+      line-height: 1.45;
+      margin-bottom: 14px;
+    }
+
+    /* OVERVIEW STATS */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .stat-tile {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-md);
+      padding: 18px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+    }
+
+    .stat-label {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .stat-val {
+      font-size: 1.6rem;
+      font-weight: 800;
+      margin: 4px 0 2px 0;
+      color: var(--primary);
+    }
+
+    .stat-sub {
+      font-size: 0.76rem;
+      color: var(--text-muted);
+    }
+
+    /* WORKFLOW CARDS */
+    .workflow-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .workflow-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-md);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: all 0.2s ease;
+    }
+
+    .workflow-card:hover {
+      border-color: var(--primary);
+      box-shadow: 0 4px 14px rgba(36, 84, 219, 0.06);
+    }
+
+    .workflow-card h3 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin: 8px 0 6px 0;
+    }
+
+    .workflow-card p {
+      font-size: 0.86rem;
+      color: var(--text-sub);
+      line-height: 1.45;
+      margin-bottom: 16px;
+    }
+
+    /* BUTTONS */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 9px 20px;
+      border-radius: var(--radius-full);
+      font-size: 0.88rem;
+      font-weight: 600;
+      border: 1px solid transparent;
+      cursor: pointer;
+      outline: none;
+      transition: all 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+      text-decoration: none;
+    }
+
+    .btn:active {
+      transform: translateY(1.5px);
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: var(--primary-hover);
+    }
+
+    .btn-primary:active {
+      background: var(--primary-pressed);
+    }
+
+    .btn-secondary {
+      background: #f1f5f9;
+      color: var(--text-main);
+      border-color: var(--card-border);
+    }
+
+    .btn-secondary:hover {
+      background: #e2e8f0;
+    }
+
+    .btn-outline {
+      background: transparent;
+      color: var(--text-sub);
+      border-color: var(--card-border);
+    }
+
+    .btn-outline:hover {
+      background: #f8fafc;
+      color: var(--text-main);
+    }
+
+    .btn-danger {
+      background: #fef2f2;
+      color: var(--alert);
+      border-color: var(--alert-border);
+    }
+
+    .btn-danger:hover {
+      background: #fee2e2;
+    }
+
+    /* FORM INPUTS */
+    .form-group {
+      margin-bottom: 14px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 0.84rem;
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: var(--text-main);
+    }
+
+    .input-box {
+      width: 100%;
+      padding: 9px 14px;
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-sm);
+      font-size: 0.88rem;
+      color: var(--text-main);
+      background: #ffffff;
+      outline: none;
+      transition: border-color 0.18s ease;
+    }
+
+    .input-box:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(36, 84, 219, 0.08);
+    }
+
+    .file-dropzone {
+      border: 1.5px dashed var(--card-border);
+      border-radius: var(--radius-md);
+      padding: 18px;
+      text-align: center;
+      background: #fafbfc;
+      cursor: pointer;
+      transition: all 0.18s ease;
+    }
+
+    .file-dropzone:hover {
+      border-color: var(--primary);
+      background: #f4f7fd;
+    }
+
+    .file-dropzone p {
+      font-size: 0.84rem;
+      color: var(--text-sub);
+      margin-top: 4px;
+    }
+
+    .file-input-hidden {
+      display: none;
+    }
+
+    /* PROPERTY DETAILS CONTAINER */
+    .prop-box {
+      background: var(--pill-bg);
+      border: 1px solid var(--pill-border);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      margin-top: 14px;
+    }
+
+    .prop-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+      font-size: 0.84rem;
+    }
+
+    .prop-row:last-child {
+      border-bottom: none;
+    }
+
+    .prop-name {
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .prop-val {
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--text-sub);
+      font-size: 0.82rem;
+      word-break: break-all;
+      max-width: 60%;
+      text-align: right;
+    }
+
+    /* RESULT BANNER */
+    .result-banner {
+      border-radius: var(--radius-md);
+      padding: 18px;
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      margin-bottom: 14px;
+      transition: all 0.2s ease;
+    }
+
+    .result-valid {
+      background: var(--success-bg);
+      border: 1px solid var(--success-border);
+    }
+
+    .result-invalid {
+      background: var(--alert-bg);
+      border: 1px solid var(--alert-border);
+    }
+
+    .result-banner svg {
+      width: 28px;
+      height: 28px;
+      flex-shrink: 0;
+    }
+
+    .result-info h4 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin-bottom: 2px;
+    }
+
+    .result-valid .result-info h4 { color: var(--success); }
+    .result-invalid .result-info h4 { color: var(--alert); }
+
+    .result-info p {
+      font-size: 0.85rem;
+      color: var(--text-sub);
+      line-height: 1.4;
+    }
+
+    /* AUDIT HISTORY TABLE */
+    .table-wrap {
+      overflow-x: auto;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--card-border);
+      background: #ffffff;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.84rem;
+      text-align: left;
+    }
+
+    th {
+      background: #f8fafc;
+      padding: 12px 16px;
+      font-weight: 700;
+      color: var(--text-sub);
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--card-border);
+      color: var(--text-main);
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    .tag-valid {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: var(--radius-full);
+      background: var(--success-bg);
+      color: var(--success);
+      font-weight: 700;
+      font-size: 0.74rem;
+    }
+
+    .tag-invalid {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: var(--radius-full);
+      background: var(--alert-bg);
+      color: var(--alert);
+      font-weight: 700;
+      font-size: 0.74rem;
+    }
+
+    /* FOOTER */
+    .app-footer {
+      background: #ffffff;
+      border-top: 1px solid var(--card-border);
+      padding: 12px 28px;
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header class="app-header">
+    <div class="brand-wrap">
+      <div class="shield-icon">
+        <svg viewBox="0 0 24 24">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+          <path d="m9 12 2 2 4-4"></path>
+        </svg>
+      </div>
+      <div class="brand-titles">
+        <h1>DSA File Integrity Verifier</h1>
+        <p>Digital signatures for tamper detection</p>
+      </div>
+    </div>
+    <div class="status-capsule">
+      <div class="status-dot"></div>
+      <span>Engine Active</span>
+    </div>
+  </header>
+
+  <!-- CONTAINER -->
+  <main class="app-container">
+    <!-- NAVIGATION -->
+    <nav class="nav-bar">
+      <button class="nav-tab-btn active" onclick="switchTab(0)">Overview</button>
+      <button class="nav-tab-btn" onclick="switchTab(1)">1. Generate Keys</button>
+      <button class="nav-tab-btn" onclick="switchTab(2)">2. Sign File</button>
+      <button class="nav-tab-btn" onclick="switchTab(3)">3. Verify Signature</button>
+      <button class="nav-tab-btn" onclick="switchTab(4)">History</button>
+    </nav>
+
+    <!-- TAB 0: OVERVIEW -->
+    <section id="tab-0" class="tab-content active">
+      <div class="stats-grid">
+        <div class="stat-tile">
+          <div class="stat-label">Total Verifications</div>
+          <div class="stat-val" id="metric-total">0</div>
+          <div class="stat-sub">Logged inspections</div>
+        </div>
+        <div class="stat-tile">
+          <div class="stat-label">Authentic Files</div>
+          <div class="stat-val" id="metric-valid" style="color: var(--success);">0</div>
+          <div class="stat-sub">Passed verification</div>
+        </div>
+        <div class="stat-tile">
+          <div class="stat-label">Tamper Alerts</div>
+          <div class="stat-val" id="metric-tamper" style="color: var(--alert);">0</div>
+          <div class="stat-sub">Modified / invalid</div>
+        </div>
+        <div class="stat-tile">
+          <div class="stat-label">Algorithm</div>
+          <div class="stat-val" style="color: #4f46e5; font-size: 1.3rem;">DSA 2048</div>
+          <div class="stat-sub">SHA-256 Digest</div>
+        </div>
+      </div>
+
+      <div class="workflow-grid">
+        <div class="workflow-card">
+          <div>
+            <span class="badge badge-blue">Step 1</span>
+            <h3>Generate Keys</h3>
+            <p>Create a 2048-bit DSA key pair. Keep your private key secret and distribute the public key to verifiers.</p>
+          </div>
+          <button class="btn btn-primary" onclick="switchTab(1)">Generate Keys &rarr;</button>
+        </div>
+        <div class="workflow-card">
+          <div>
+            <span class="badge badge-purple">Step 2</span>
+            <h3>Sign a File</h3>
+            <p>Apply a tamper-proof digital signature to any file using your private DSA key and SHA-256 digest.</p>
+          </div>
+          <button class="btn btn-primary" style="background: #6366f1;" onclick="switchTab(2)">Sign File &rarr;</button>
+        </div>
+        <div class="workflow-card">
+          <div>
+            <span class="badge badge-green">Step 3</span>
+            <h3>Verify Integrity</h3>
+            <p>Inspect a file against its signature and public key to detect unauthorized alterations or corruptions.</p>
+          </div>
+          <button class="btn btn-primary" style="background: var(--success);" onclick="switchTab(3)">Verify File &rarr;</button>
+        </div>
+      </div>
+
+      <div class="card" style="display: flex; align-items: center; gap: 14px; margin-bottom: 0;">
+        <svg style="width: 26px; height: 26px; stroke: var(--primary); fill: none;" viewBox="0 0 24 24">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke-width="2"></path>
+        </svg>
+        <div>
+          <strong style="color: var(--primary); font-size: 0.9rem;">How Digital Signatures Protect Integrity:</strong>
+          <p style="font-size: 0.84rem; color: var(--text-sub); margin-top: 2px;">
+            Private key signs digest &rarr; File + .sig + Public key shared &rarr; Public key verifies authentic content.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 1: GENERATE KEYS -->
+    <section id="tab-1" class="tab-content">
+      <div class="card">
+        <div class="card-header">
+          <span class="badge badge-blue">Key Management</span>
+          <h2 class="card-title">Generate DSA 2048-bit Key Pair</h2>
+        </div>
+        <p class="card-subtitle">
+          Generates a 2048-bit DSA private key and public key pair. The private key remains confidential; share the public key with anyone who needs to verify your signatures.
+        </p>
+
+        <div class="form-group" style="max-width: 440px;">
+          <label class="form-label">Passphrase (optional):</label>
+          <input type="password" id="key-passphrase" class="input-box" placeholder="Encrypts private key with PKCS#8">
+        </div>
+
+        <button class="btn btn-primary" onclick="generateKeys()">Generate DSA Key Pair</button>
+
+        <div id="keys-result" style="display: none; margin-top: 18px;">
+          <div class="prop-box">
+            <div class="prop-row">
+              <span class="prop-name">Key Size</span>
+              <span class="prop-val" id="res-key-size">2048 bits</span>
+            </div>
+            <div class="prop-row">
+              <span class="prop-name">Encryption</span>
+              <span class="prop-val" id="res-key-enc">None</span>
+            </div>
+            <div class="prop-row">
+              <span class="prop-name">Public Key Fingerprint</span>
+              <span class="prop-val" id="res-key-fp"></span>
+            </div>
+          </div>
+          <div style="display: flex; gap: 10px; margin-top: 14px;">
+            <button class="btn btn-secondary" onclick="downloadFile('private_key.pem', currentKeys.private_pem)">
+              Download private_key.pem
+            </button>
+            <button class="btn btn-secondary" onclick="downloadFile('public_key.pem', currentKeys.public_pem)">
+              Download public_key.pem
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: SIGN FILE -->
+    <section id="tab-2" class="tab-content">
+      <div class="card">
+        <div class="card-header">
+          <span class="badge badge-purple">Signature Creation</span>
+          <h2 class="card-title">Sign File with Private Key</h2>
+        </div>
+        <p class="card-subtitle">
+          Upload target file and your private DSA key (.pem). The engine calculates the SHA-256 hash and applies a mathematical digital signature.
+        </p>
+
+        <div class="form-group">
+          <label class="form-label">Target File to Sign:</label>
+          <div class="file-dropzone" onclick="document.getElementById('sign-file').click()">
+            <strong id="sign-file-name">Click to choose file</strong>
+            <p>Any document, binary, archive, or code file</p>
+            <input type="file" id="sign-file" class="file-input-hidden" onchange="updateFileName(this, 'sign-file-name')">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Private Key (.pem):</label>
+          <div class="file-dropzone" onclick="document.getElementById('sign-key').click()">
+            <strong id="sign-key-name">Click to choose private key (.pem)</strong>
+            <p>DSA private key in PEM format</p>
+            <input type="file" id="sign-key" class="file-input-hidden" onchange="updateFileName(this, 'sign-key-name')">
+          </div>
+        </div>
+
+        <div class="form-group" style="max-width: 440px;">
+          <label class="form-label">Passphrase (if key is encrypted):</label>
+          <input type="password" id="sign-passphrase" class="input-box" placeholder="Private key passphrase">
+        </div>
+
+        <button class="btn btn-primary" onclick="signFile()">Sign File</button>
+
+        <div id="sign-result" style="display: none; margin-top: 18px;">
+          <div class="prop-box">
+            <div class="prop-row">
+              <span class="prop-name">Target File</span>
+              <span class="prop-val" id="sign-res-file"></span>
+            </div>
+            <div class="prop-row">
+              <span class="prop-name">SHA-256 Digest</span>
+              <span class="prop-val" id="sign-res-hash"></span>
+            </div>
+            <div class="prop-row">
+              <span class="prop-name">Signature Parameters</span>
+              <span class="prop-val" id="sign-res-params"></span>
+            </div>
+            <div class="prop-row">
+              <span class="prop-name">Signer Fingerprint</span>
+              <span class="prop-val" id="sign-res-fp"></span>
+            </div>
+          </div>
+          <div style="display: flex; gap: 10px; margin-top: 14px;">
+            <button class="btn btn-secondary" onclick="downloadBinary(currentSignResult.file_name + '.sig', currentSignResult.signature_hex)">
+              Download Signature (.sig)
+            </button>
+            <button class="btn btn-secondary" onclick="downloadFile(currentSignResult.file_name + '.sig.info', JSON.stringify(currentSignResult.manifest, null, 2))">
+              Download Manifest (.sig.info)
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: VERIFY SIGNATURE -->
+    <section id="tab-3" class="tab-content">
+      <div class="card">
+        <div class="card-header">
+          <span class="badge badge-blue">Verification</span>
+          <h2 class="card-title">Verify File Integrity & Detect Tampering</h2>
+        </div>
+        <p class="card-subtitle">
+          Verify whether a file matches its digital signature and sender's public key. Instantly detects if any byte was modified.
+        </p>
+
+        <div class="form-group">
+          <label class="form-label">Signed File to Inspect:</label>
+          <div class="file-dropzone" onclick="document.getElementById('verify-file').click()">
+            <strong id="verify-file-name">Click to choose signed file</strong>
+            <input type="file" id="verify-file" class="file-input-hidden" onchange="updateFileName(this, 'verify-file-name')">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Signature File (.sig):</label>
+          <div class="file-dropzone" onclick="document.getElementById('verify-sig').click()">
+            <strong id="verify-sig-name">Click to choose signature (.sig)</strong>
+            <input type="file" id="verify-sig" class="file-input-hidden" onchange="updateFileName(this, 'verify-sig-name')">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Public Key (.pem):</label>
+          <div class="file-dropzone" onclick="document.getElementById('verify-key').click()">
+            <strong id="verify-key-name">Click to choose public key (.pem)</strong>
+            <input type="file" id="verify-key" class="file-input-hidden" onchange="updateFileName(this, 'verify-key-name')">
+          </div>
+        </div>
+
+        <button class="btn btn-primary" onclick="verifyFile()">Verify Signature</button>
+
+        <!-- VERIFICATION RESULT BANNER -->
+        <div id="verify-result-wrap" style="display: none; margin-top: 18px;">
+          <div id="verify-banner" class="result-banner">
+            <svg id="verify-banner-icon" viewBox="0 0 24 24"></svg>
+            <div class="result-info">
+              <h4 id="verify-banner-title"></h4>
+              <p id="verify-banner-desc"></p>
+            </div>
+          </div>
+
+          <div class="prop-box">
+            <div class="prop-row">
+              <span class="prop-name">Inspected File</span>
+              <span class="prop-val" id="verify-res-file"></span>
+            </div>
+            <div class="prop-row">
+              <span class="prop-name">Current SHA-256</span>
+              <span class="prop-val" id="verify-res-current-hash"></span>
+            </div>
+            <div class="prop-row" id="verify-res-drift-row" style="display: none;">
+              <span class="prop-name">Original Hash</span>
+              <span class="prop-val" id="verify-res-signed-hash"></span>
+            </div>
+            <div class="prop-row">
+              <span class="prop-name">Signer Public Key</span>
+              <span class="prop-val" id="verify-res-fp"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: AUDIT HISTORY -->
+    <section id="tab-4" class="tab-content">
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px;">
+          <div>
+            <h2 class="card-title">Verification Audit Trail</h2>
+            <p style="font-size: 0.84rem; color: var(--text-muted); margin-top: 2px;">Persistent history of all file integrity verifications.</p>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <input type="text" id="history-search" class="input-box" placeholder="Filter by file or hash..." style="width: 220px;" oninput="renderHistory()">
+            <button class="btn btn-danger" onclick="clearHistory()">Clear History</button>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date & Time</th>
+                <th>File Name</th>
+                <th>Verdict</th>
+                <th>SHA-256 Digest</th>
+              </tr>
+            </thead>
+            <tbody id="history-tbody">
+              <tr><td colspan="4" style="text-align: center; color: var(--text-muted);">No records found.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="app-footer">
+    <span>DSA Cryptosystem (2048-bit) &bull; SHA-256 Engine</span>
+    <span>Aether Sentry Web Edition</span>
+  </footer>
+
+  <script>
+    let currentKeys = null;
+    let currentSignResult = null;
+    let historyData = [];
+
+    function switchTab(idx) {
+      document.querySelectorAll('.nav-tab-btn').forEach((btn, i) => {
+        btn.classList.toggle('active', i === idx);
+      });
+      document.querySelectorAll('.tab-content').forEach((sec, i) => {
+        sec.classList.toggle('active', i === idx);
+      });
+      if (idx === 0) fetchMetrics();
+      if (idx === 4) fetchHistory();
+    }
+
+    function updateFileName(input, targetId) {
+      if (input.files && input.files[0]) {
+        document.getElementById(targetId).textContent = input.files[0].name;
+      }
+    }
+
+    function downloadFile(filename, content) {
+      const blob = new Blob([content], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function downloadBinary(filename, hexStr) {
+      const bytes = new Uint8Array(hexStr.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+      const blob = new Blob([bytes], { type: 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    async function fetchMetrics() {
+      try {
+        const res = await fetch('/api/metrics');
+        const data = await res.json();
+        document.getElementById('metric-total').textContent = data.total;
+        document.getElementById('metric-valid').textContent = data.valid;
+        document.getElementById('metric-tamper').textContent = data.tamper;
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function generateKeys() {
+      const passphrase = document.getElementById('key-passphrase').value;
+      try {
+        const res = await fetch('/api/generate-keys', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ passphrase: passphrase || null })
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          currentKeys = data;
+          document.getElementById('keys-result').style.display = 'block';
+          document.getElementById('res-key-size').textContent = data.key_size + ' bits (q = ' + data.q_bits + ' bits)';
+          document.getElementById('res-key-enc').textContent = data.encrypted ? 'Yes (PKCS#8 Encrypted)' : 'No';
+          document.getElementById('res-key-fp').textContent = data.fingerprint;
+        }
+      } catch (e) {
+        alert('Key generation failed: ' + e);
+      }
+    }
+
+    async function signFile() {
+      const fileInput = document.getElementById('sign-file');
+      const keyInput = document.getElementById('sign-key');
+      const passphrase = document.getElementById('sign-passphrase').value;
+
+      if (!fileInput.files[0] || !keyInput.files[0]) {
+        alert('Please select both a file to sign and a private key (.pem)');
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('file', fileInput.files[0]);
+      formData.append('key', keyInput.files[0]);
+      if (passphrase) formData.append('passphrase', passphrase);
+
+      try {
+        const res = await fetch('/api/sign', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (data.status === 'success') {
+          currentSignResult = data;
+          document.getElementById('sign-result').style.display = 'block';
+          document.getElementById('sign-res-file').textContent = data.file_name + ' (' + data.size.toLocaleString() + ' bytes)';
+          document.getElementById('sign-res-hash').textContent = data.sha256;
+          document.getElementById('sign-res-params').textContent = 'r: ' + data.r.slice(0, 16) + '... s: ' + data.s.slice(0, 16) + '...';
+          document.getElementById('sign-res-fp').textContent = data.fingerprint;
+        } else {
+          alert('Signing error: ' + data.message);
+        }
+      } catch (e) {
+        alert('Signing request failed: ' + e);
+      }
+    }
+
+    async function verifyFile() {
+      const fileInput = document.getElementById('verify-file');
+      const sigInput = document.getElementById('verify-sig');
+      const keyInput = document.getElementById('verify-key');
+
+      if (!fileInput.files[0] || !sigInput.files[0] || !keyInput.files[0]) {
+        alert('Please select target file, signature (.sig), and public key (.pem)');
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('file', fileInput.files[0]);
+      formData.append('signature', sigInput.files[0]);
+      formData.append('key', keyInput.files[0]);
+
+      try {
+        const res = await fetch('/api/verify', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (data.status === 'success') {
+          const wrap = document.getElementById('verify-result-wrap');
+          const banner = document.getElementById('verify-banner');
+          const icon = document.getElementById('verify-banner-icon');
+          const title = document.getElementById('verify-banner-title');
+          const desc = document.getElementById('verify-banner-desc');
+
+          wrap.style.display = 'block';
+
+          if (data.valid) {
+            banner.className = 'result-banner result-valid';
+            icon.innerHTML = '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" fill="#15803d"></path><path d="m9 12 2 2 4-4" stroke="white" stroke-width="2"></path>';
+            title.textContent = '✔ Signature Valid: File Authentic';
+            desc.textContent = 'The digital signature matches the file content and public key. No tampering detected.';
+          } else {
+            banner.className = 'result-banner result-invalid';
+            icon.innerHTML = '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" fill="#b91c1c"></path><path d="M12 8v5M12 16h.01" stroke="white" stroke-width="2.5"></path>';
+            title.textContent = '✖ Signature Invalid / File Tampered';
+            desc.textContent = 'File content has been modified since it was signed, or the public key does not match.';
+          }
+
+          document.getElementById('verify-res-file').textContent = data.file_name;
+          document.getElementById('verify-res-current-hash').textContent = data.current_hash;
+          document.getElementById('verify-res-fp').textContent = data.fingerprint;
+        } else {
+          alert('Verification error: ' + data.message);
+        }
+      } catch (e) {
+        alert('Verification request failed: ' + e);
+      }
+    }
+
+    async function fetchHistory() {
+      try {
+        const res = await fetch('/api/history');
+        historyData = await res.json();
+        renderHistory();
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    function renderHistory() {
+      const q = (document.getElementById('history-search').value || '').toLowerCase();
+      const tbody = document.getElementById('history-tbody');
+      tbody.innerHTML = '';
+
+      const filtered = historyData.filter(h =>
+        (h.file && h.file.toLowerCase().includes(q)) ||
+        (h.sha256 && h.sha256.toLowerCase().includes(q))
+      );
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 20px;">No verification records found.</td></tr>';
+        return;
+      }
+
+      filtered.forEach(item => {
+        const tr = document.createElement('tr');
+        const tagClass = item.result === 'VALID' ? 'tag-valid' : 'tag-invalid';
+        tr.innerHTML = `
+          <td>${item.date}</td>
+          <td><strong>${item.file}</strong></td>
+          <td><span class="${tagClass}">${item.result}</span></td>
+          <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem;">${item.sha256.slice(0, 24)}...</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    async function clearHistory() {
+      if (!confirm('Are you sure you want to clear all verification audit history?')) return;
+      try {
+        await fetch('/api/clear-history', { method: 'POST' });
+        fetchHistory();
+      } catch (e) {
+        alert('Clear history failed: ' + e);
+      }
+    }
+
+    // Initial load
+    fetchMetrics();
+  </script>
+</body>
+</html>

@@ -1,0 +1,614 @@
+"""
+File Integrity Verification Using the Digital Signature Algorithm (DSA)
+CNS Project  (Version 3)
+
+Install:  pip install cryptography
+Run:      python app_v3.py
+"""
+
+import os
+import json
+import hashlib
+from datetime import datetime
+
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox, simpledialog
+
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import dsa
+from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
+from cryptography.exceptions import InvalidSignature
+
+# History is stored in the user's home folder so it works from VS Code and from the .exe
+DATA_DIR = os.path.join(os.path.expanduser("~"), "DSA_Verifier_Data")
+HISTORY_FILE = os.path.join(DATA_DIR, "verification_history.json")
+
+NAVY = "#1f2a6b"
+GREEN = "#1e8e3e"
+RED = "#c5221f"
+BLUE = "#1a56c4"
+BG = "#f4f6fb"
+
+
+# ======================================================================
+# CRYPTO FUNCTIONS
+# ======================================================================
+
+def file_sha256(path):
+    """SHA-256 hex digest of a file."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def key_fingerprint(public_key):
+    """Short SHA-256 fingerprint of a public key, so users can compare keys."""
+    der = public_key.public_bytes(
+        serialization.Encoding.DER,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    fp = hashlib.sha256(der).hexdigest()
+    return ":".join(fp[i:i + 4] for i in range(0, 32, 4))
+
+
+def is_encrypted(pem_path):
+    with open(pem_path, "rb") as f:
+        return b"ENCRYPTED" in f.read()
+
+
+def generate_keys(folder, passphrase=None):
+    """Create a 2048-bit DSA key pair. Optionally encrypt the private key."""
+    private_key = dsa.generate_private_key(key_size=2048)
+    public_key = private_key.public_key()
+
+    if passphrase:
+        enc = serialization.BestAvailableEncryption(passphrase.encode())
+    else:
+        enc = serialization.NoEncryption()
+
+    private_pem = private_key.private_bytes(
+        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, enc)
+    public_pem = public_key.public_bytes(
+        serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
+
+    priv_path = os.path.join(folder, "private_key.pem")
+    pub_path = os.path.join(folder, "public_key.pem")
+    with open(priv_path, "wb") as f:
+        f.write(private_pem)
+    with open(pub_path, "wb") as f:
+        f.write(public_pem)
+
+    params = public_key.public_numbers().parameter_numbers
+    return {
+        "private_path": priv_path,
+        "public_path": pub_path,
+        "key_size": private_key.key_size,
+        "q_bits": params.q.bit_length(),
+        "encrypted": bool(passphrase),
+        "fingerprint": key_fingerprint(public_key),
+    }
+
+
+def sign_file(file_path, private_key_path, passphrase=None):
+    """Sign a file. Saves <file>.sig and a small <file>.sig.info record."""
+    with open(private_key_path, "rb") as f:
+        pem = f.read()
+    private_key = serialization.load_pem_private_key(
+        pem, password=passphrase.encode() if passphrase else None)
+    if not isinstance(private_key, dsa.DSAPrivateKey):
+        raise ValueError("The selected key is not a DSA private key.")
+
+    with open(file_path, "rb") as f:
+        data = f.read()
+
+    # The library hashes the data with SHA-256, then signs the hash with the private key.
+    signature = private_key.sign(data, hashes.SHA256())
+    r, s = decode_dss_signature(signature)
+    digest = hashlib.sha256(data).hexdigest()
+    fingerprint = key_fingerprint(private_key.public_key())
+
+    sig_path = file_path + ".sig"
+    with open(sig_path, "wb") as f:
+        f.write(signature)
+
+    info = {
+        "file": os.path.basename(file_path),
+        "sha256": digest,
+        "signed_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "key_fingerprint": fingerprint,
+    }
+    with open(sig_path + ".info", "w") as f:
+        json.dump(info, f, indent=2)
+
+    return {"sig_path": sig_path, "sha256": digest, "r": r, "s": s,
+            "fingerprint": fingerprint, "size": len(data)}
+
+
+def verify_file(file_path, sig_path, public_key_path):
+    """Verify a signature. Returns a dictionary with the result and details."""
+    with open(public_key_path, "rb") as f:
+        public_key = serialization.load_pem_public_key(f.read())
+    if not isinstance(public_key, dsa.DSAPublicKey):
+        raise ValueError("The selected key is not a DSA public key.")
+
+    with open(file_path, "rb") as f:
+        data = f.read()
+    with open(sig_path, "rb") as f:
+        signature = f.read()
+
+    current_hash = hashlib.sha256(data).hexdigest()
+
+    try:
+        r, s = decode_dss_signature(signature)
+    except ValueError:
+        r, s = None, None  # signature file is corrupted / not a DSA signature
+
+    try:
+        public_key.verify(signature, data, hashes.SHA256())
+        valid = True
+    except InvalidSignature:
+        valid = False
+
+    # Optional: hash recorded at signing time (informational only)
+    signed_hash = None
+    info_path = sig_path + ".info"
+    if os.path.exists(info_path):
+        try:
+            with open(info_path, "r") as f:
+                signed_hash = json.load(f).get("sha256")
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    return {"valid": valid, "current_hash": current_hash, "signed_hash": signed_hash,
+            "r": r, "s": s, "fingerprint": key_fingerprint(public_key)}
+
+
+# ======================================================================
+# HISTORY
+# ======================================================================
+
+def load_history():
+    if not os.path.exists(HISTORY_FILE):
+        return []
+    try:
+        with open(HISTORY_FILE, "r") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return []
+
+
+def save_history(history):
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(HISTORY_FILE, "w") as f:
+        json.dump(history, f, indent=2)
+
+
+def add_history(file_name, result, sha):
+    history = load_history()
+    history.append({
+        "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "file": file_name,
+        "result": result,
+        "sha256": sha,
+    })
+    save_history(history)
+
+
+# ======================================================================
+# GUI
+# ======================================================================
+
+def draw_shield(canvas, cx, cy, size, fill, check="white", outline="", width=0):
+    """Draw a shield with a check mark (no image files needed)."""
+    pts = [(-0.85, -0.65), (0, -1), (0.85, -0.65), (0.85, 0.1),
+           (0.5, 0.65), (0, 1), (-0.5, 0.65), (-0.85, 0.1)]
+    flat = []
+    for x, y in pts:
+        flat += [cx + x * size, cy + y * size]
+    canvas.create_polygon(flat, fill=fill, outline=outline, width=width, joinstyle="round")
+    canvas.create_line(cx - 0.4 * size, cy, cx - 0.1 * size, cy + 0.35 * size,
+                       cx + 0.45 * size, cy - 0.3 * size,
+                       fill=check, width=max(2, int(size * 0.17)),
+                       capstyle="round", joinstyle="round")
+
+
+class GradientHeader(tk.Canvas):
+    """Blue gradient banner with logo and title."""
+
+    def __init__(self, parent, height=68, c1="#1f2a6b", c2="#3d5afe"):
+        super().__init__(parent, height=height, highlightthickness=0, bd=0)
+        self.c1, self.c2 = c1, c2
+        self.bind("<Configure>", self.redraw)
+
+    def redraw(self, event=None):
+        self.delete("all")
+        w, h = max(self.winfo_width(), 2), self.winfo_height()
+        r1, g1, b1 = [v // 256 for v in self.winfo_rgb(self.c1)]
+        r2, g2, b2 = [v // 256 for v in self.winfo_rgb(self.c2)]
+        step = 3
+        for x in range(0, w, step):
+            t = x / (w - 1)
+            col = "#%02x%02x%02x" % (int(r1 + (r2 - r1) * t),
+                                     int(g1 + (g2 - g1) * t),
+                                     int(b1 + (b2 - b1) * t))
+            self.create_rectangle(x, 0, x + step, h, fill=col, outline=col)
+        draw_shield(self, 42, h / 2, 19, "white", check=self.c1)
+        self.create_text(74, h / 2 - 10, text="DSA File Integrity Verifier", anchor="w",
+                         fill="white", font=("Segoe UI", 17, "bold"))
+        self.create_text(74, h / 2 + 14, text="Digital signatures for tamper detection",
+                         anchor="w", fill="#d6defc", font=("Segoe UI", 9))
+
+
+class App:
+    def __init__(self, root):
+        self.root = root
+        root.title("DSA File Integrity Verifier")
+        root.geometry("860x760")
+        root.minsize(800, 720)
+        root.configure(bg=BG)
+        self.last_hash = ""
+
+        style = ttk.Style()
+        try:
+            style.theme_use("clam")
+        except tk.TclError:
+            pass
+        style.configure("TFrame", background=BG)
+        style.configure("TLabel", background=BG, font=("Segoe UI", 10))
+        style.configure("TNotebook", background=BG)
+        style.configure("TNotebook.Tab", font=("Segoe UI", 10, "bold"), padding=(14, 6))
+        style.configure("Action.TButton", font=("Segoe UI", 11, "bold"),
+                        background=NAVY, foreground="white", padding=8)
+        style.map("Action.TButton", background=[("active", BLUE)])
+        style.configure("Treeview", rowheight=24, font=("Segoe UI", 9))
+        style.configure("Treeview.Heading", font=("Segoe UI", 10, "bold"))
+
+        GradientHeader(root).pack(fill="x")
+
+        # status bar (packed first so it stays at the bottom)
+        self.status = tk.StringVar(value="Ready")
+        tk.Label(root, textvariable=self.status, anchor="w", bg="#e3e7f3",
+                 font=("Segoe UI", 9), padx=10).pack(side="bottom", fill="x")
+
+        self.nb = ttk.Notebook(root)
+        self.nb.pack(fill="both", expand=True, padx=12, pady=10)
+
+        self.build_home_tab()
+        self.build_keys_tab()
+        self.build_sign_tab()
+        self.build_verify_tab()
+        self.build_history_tab()
+        self.nb.bind("<<NotebookTabChanged>>", lambda e: self.refresh_history())
+
+    # ---------- helpers ----------
+    def tab(self, title):
+        frame = ttk.Frame(self.nb, padding=14)
+        frame.columnconfigure(1, weight=1)
+        self.nb.add(frame, text=title)
+        return frame
+
+    def browse(self, var, kind, filetypes=None):
+        if kind == "dir":
+            p = filedialog.askdirectory(title="Select folder")
+        else:
+            p = filedialog.askopenfilename(title="Select file",
+                                           filetypes=filetypes or [("All files", "*.*")])
+        if p:
+            var.set(p)
+
+    def path_row(self, parent, label, var, row, kind="open", filetypes=None):
+        ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=5)
+        ttk.Entry(parent, textvariable=var).grid(row=row, column=1, sticky="ew", padx=8)
+        ttk.Button(parent, text="Browse...",
+                   command=lambda: self.browse(var, kind, filetypes)).grid(row=row, column=2)
+
+    def make_output(self, parent, height):
+        t = tk.Text(parent, height=height, font=("Consolas", 9), wrap="word",
+                    state="disabled", bg="white", relief="solid", bd=1, padx=8, pady=6)
+        return t
+
+    def set_output(self, widget, text):
+        widget.config(state="normal")
+        widget.delete("1.0", "end")
+        widget.insert("1.0", text)
+        widget.config(state="disabled")
+
+    def busy(self, msg):
+        self.status.set(msg)
+        self.root.update_idletasks()
+
+    # ---------- Home tab ----------
+    def build_home_tab(self):
+        f = ttk.Frame(self.nb, padding=(14, 8))
+        self.nb.add(f, text="  Home  ")
+
+        hero = tk.Canvas(f, width=130, height=120, bg=BG, highlightthickness=0)
+        hero.pack(pady=(6, 0))
+        hero.create_oval(10, 6, 120, 116, fill="#e3e9ff", outline="")
+        draw_shield(hero, 65, 61, 38, NAVY, check="white")
+
+        tk.Label(f, text="Has your file been changed since it was signed?", bg=BG, fg=NAVY,
+                 font=("Segoe UI", 19, "bold")).pack(pady=(6, 2))
+        tk.Label(f, text="Sign any file with a private key, then let anyone check it with your public key. "
+                         "Even a one-character edit is detected.",
+                 bg=BG, fg="#555a6e", font=("Segoe UI", 10), wraplength=680,
+                 justify="center").pack()
+
+        cards = tk.Frame(f, bg=BG)
+        cards.pack(fill="x", pady=16)
+        for i in range(3):
+            cards.columnconfigure(i, weight=1, uniform="card")
+        self.make_card(cards, 0, "1", "Generate Keys",
+                       "Create your DSA private and public key pair.", BLUE, 1)
+        self.make_card(cards, 1, "2", "Sign a File",
+                       "Attach a tamper-proof digital signature to any file.", "#6741d9", 2)
+        self.make_card(cards, 2, "3", "Verify a File",
+                       "Check whether a file is genuine or has been modified.", GREEN, 3)
+
+        tk.Label(f, text="Private key signs   \u2192   File + signature + public key are shared   \u2192   "
+                         "Public key verifies",
+                 bg="#e3e9ff", fg=NAVY, font=("Segoe UI", 10, "bold"), pady=9, padx=16).pack(pady=(0, 10))
+
+    def make_card(self, parent, col, num, title, desc, color, tab_index):
+        card = tk.Frame(parent, bg="white", highlightbackground="#d6dbea",
+                        highlightthickness=2, cursor="hand2")
+        card.grid(row=0, column=col, sticky="nsew", padx=8)
+
+        badge = tk.Canvas(card, width=46, height=46, bg="white", highlightthickness=0)
+        badge.create_oval(3, 3, 43, 43, fill=color, outline="")
+        badge.create_text(23, 23, text=num, fill="white", font=("Segoe UI", 15, "bold"))
+        badge.pack(pady=(16, 6))
+
+        tk.Label(card, text=title, bg="white", fg=NAVY,
+                 font=("Segoe UI", 12, "bold")).pack()
+        tk.Label(card, text=desc, bg="white", fg="#555a6e", font=("Segoe UI", 9),
+                 wraplength=190, justify="center", height=3).pack(padx=10, pady=(4, 6))
+        tk.Button(card, text="Open  \u2192", bg=color, fg="white", activebackground=NAVY,
+                  activeforeground="white", relief="flat", font=("Segoe UI", 10, "bold"),
+                  padx=16, pady=4, cursor="hand2",
+                  command=lambda: self.nb.select(tab_index)).pack(pady=(0, 16))
+
+        def hover(on):
+            card.config(highlightbackground=color if on else "#d6dbea")
+
+        def bind_all(widget):
+            widget.bind("<Enter>", lambda e: hover(True), add="+")
+            widget.bind("<Leave>", lambda e: hover(False), add="+")
+            widget.bind("<Button-1>", lambda e: self.nb.select(tab_index), add="+")
+            for child in widget.winfo_children():
+                bind_all(child)
+        bind_all(card)
+
+    # ---------- Tab 1: keys ----------
+    def build_keys_tab(self):
+        f = self.tab("1. Generate Keys")
+        self.keys_folder = tk.StringVar()
+        self.keys_pass = tk.StringVar()
+
+        ttk.Label(f, text="Create a DSA key pair. Keep the private key secret; share the public key.",
+                  wraplength=700).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 10))
+        self.path_row(f, "Save keys in folder:", self.keys_folder, 1, kind="dir")
+
+        ttk.Label(f, text="Passphrase (optional):").grid(row=2, column=0, sticky="w", pady=5)
+        ttk.Entry(f, textvariable=self.keys_pass, show="*").grid(row=2, column=1, sticky="ew", padx=8)
+        ttk.Label(f, text="Encrypts the private key file").grid(row=2, column=2, sticky="w")
+
+        ttk.Button(f, text="Generate DSA Key Pair", style="Action.TButton",
+                   command=self.do_generate).grid(row=3, column=0, columnspan=3, pady=14, sticky="ew")
+
+        self.keys_out = self.make_output(f, 12)
+        self.keys_out.grid(row=4, column=0, columnspan=3, sticky="nsew")
+        f.rowconfigure(4, weight=1)
+
+    def do_generate(self):
+        folder = self.keys_folder.get().strip()
+        if not folder or not os.path.isdir(folder):
+            messagebox.showwarning("Folder needed", "Please choose a valid folder to save the keys.")
+            return
+        if (os.path.exists(os.path.join(folder, "private_key.pem")) and
+                not messagebox.askyesno("Overwrite?",
+                                        "Keys already exist in this folder.\nOverwrite them?\n\n"
+                                        "Old signatures will no longer verify with the new keys.")):
+            return
+        self.busy("Generating 2048-bit DSA key pair (can take a few seconds)...")
+        try:
+            info = generate_keys(folder, self.keys_pass.get() or None)
+        except Exception as e:
+            self.status.set("Key generation failed")
+            messagebox.showerror("Error", "Key generation failed:\n" + str(e))
+            return
+
+        self.set_output(self.keys_out,
+            "KEY PAIR GENERATED\n\n"
+            f"Private key : {info['private_path']}   (KEEP SECRET)\n"
+            f"Public key  : {info['public_path']}   (share this)\n\n"
+            f"Key size    : {info['key_size']} bits (q = {info['q_bits']} bits)\n"
+            f"Private key encrypted with passphrase: {'Yes' if info['encrypted'] else 'No'}\n"
+            f"Public key fingerprint: {info['fingerprint']}\n\n"
+            "Tip: the fingerprint lets two people confirm they hold the same public key.")
+        # auto-fill the other tabs
+        self.sign_key.set(info["private_path"])
+        self.verify_key.set(info["public_path"])
+        self.status.set("Key pair generated and loaded into the Sign and Verify tabs")
+
+    # ---------- Tab 2: sign ----------
+    def build_sign_tab(self):
+        f = self.tab("2. Sign File")
+        self.sign_file_var = tk.StringVar()
+        self.sign_key = tk.StringVar()
+
+        ttk.Label(f, text="Select a file and your private key to create a digital signature.",
+                  wraplength=700).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 10))
+        self.path_row(f, "File to sign:", self.sign_file_var, 1)
+        self.path_row(f, "Private key (.pem):", self.sign_key, 2,
+                      filetypes=[("PEM files", "*.pem"), ("All files", "*.*")])
+
+        ttk.Button(f, text="Sign File", style="Action.TButton",
+                   command=self.do_sign).grid(row=3, column=0, columnspan=3, pady=14, sticky="ew")
+
+        self.sign_out = self.make_output(f, 12)
+        self.sign_out.grid(row=4, column=0, columnspan=3, sticky="nsew")
+        f.rowconfigure(4, weight=1)
+
+    def do_sign(self):
+        fp, kp = self.sign_file_var.get().strip(), self.sign_key.get().strip()
+        if not os.path.isfile(fp):
+            messagebox.showwarning("File needed", "Please select a file to sign.")
+            return
+        if not os.path.isfile(kp):
+            messagebox.showwarning("Key needed", "Please select your private key (.pem).")
+            return
+        pw = None
+        try:
+            if is_encrypted(kp):
+                pw = simpledialog.askstring("Passphrase", "Enter the private key passphrase:",
+                                            show="*", parent=self.root)
+                if pw is None:
+                    return
+            self.busy("Signing...")
+            res = sign_file(fp, kp, pw)
+        except Exception as e:
+            self.status.set("Signing failed")
+            messagebox.showerror("Signing failed",
+                                 "Could not sign. Wrong passphrase, or not a DSA private key?\n\n" + str(e))
+            return
+
+        self.last_hash = res["sha256"]
+        self.set_output(self.sign_out,
+            "FILE SIGNED SUCCESSFULLY\n\n"
+            f"File           : {fp}\n"
+            f"Size           : {res['size']} bytes\n"
+            f"SHA-256 hash   : {res['sha256']}\n\n"
+            f"Signature r    : {res['r']:x}\n"
+            f"Signature s    : {res['s']:x}\n\n"
+            f"Signed with key: {res['fingerprint']}\n"
+            f"Signature file : {res['sig_path']}\n\n"
+            "Send the file, the .sig file and the PUBLIC key to the receiver.")
+        self.verify_file_var.set(fp)
+        self.verify_sig.set(res["sig_path"])
+        self.status.set("File signed. Paths copied to the Verify tab.")
+
+    # ---------- Tab 3: verify ----------
+    def build_verify_tab(self):
+        f = self.tab("3. Verify Signature")
+        self.verify_file_var = tk.StringVar()
+        self.verify_sig = tk.StringVar()
+        self.verify_key = tk.StringVar()
+
+        self.path_row(f, "Signed file:", self.verify_file_var, 0)
+        self.path_row(f, "Signature (.sig):", self.verify_sig, 1,
+                      filetypes=[("Signature files", "*.sig"), ("All files", "*.*")])
+        self.path_row(f, "Public key (.pem):", self.verify_key, 2,
+                      filetypes=[("PEM files", "*.pem"), ("All files", "*.*")])
+
+        ttk.Button(f, text="Verify Signature", style="Action.TButton",
+                   command=self.do_verify).grid(row=3, column=0, columnspan=3, pady=(12, 8), sticky="ew")
+
+        self.result_lbl = tk.Label(f, text="Result will appear here", bg="#d9dde8", fg="#555",
+                                   font=("Segoe UI", 15, "bold"), pady=14)
+        self.result_lbl.grid(row=4, column=0, columnspan=3, sticky="ew")
+
+        self.verify_out = self.make_output(f, 11)
+        self.verify_out.grid(row=5, column=0, columnspan=3, sticky="nsew", pady=(8, 0))
+        f.rowconfigure(5, weight=1)
+
+        ttk.Button(f, text="Copy current hash",
+                   command=self.copy_hash).grid(row=6, column=0, columnspan=3, pady=(8, 0), sticky="e")
+
+    def copy_hash(self):
+        if self.last_hash:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(self.last_hash)
+            self.status.set("Hash copied to clipboard")
+
+    def do_verify(self):
+        fp, sp, kp = (self.verify_file_var.get().strip(), self.verify_sig.get().strip(),
+                      self.verify_key.get().strip())
+        for path, what in ((fp, "the signed file"), (sp, "the signature (.sig) file"),
+                           (kp, "the public key (.pem)")):
+            if not os.path.isfile(path):
+                messagebox.showwarning("Missing input", f"Please select {what}.")
+                return
+        self.busy("Verifying...")
+        try:
+            res = verify_file(fp, sp, kp)
+        except Exception as e:
+            self.status.set("Verification error")
+            messagebox.showerror("Error",
+                                 "Could not read the key or files. Is this a DSA public key?\n\n" + str(e))
+            return
+
+        self.last_hash = res["current_hash"]
+        if res["valid"]:
+            self.result_lbl.config(text="\u2714  VALID SIGNATURE", bg=GREEN, fg="white")
+            verdict = "File is authentic and has not been modified."
+        else:
+            self.result_lbl.config(text="\u2718  INVALID SIGNATURE / FILE MAY BE TAMPERED",
+                                   bg=RED, fg="white")
+            verdict = "The file, the signature or the public key does not match."
+
+        lines = [verdict, "", f"File              : {os.path.basename(fp)}",
+                 f"Current SHA-256   : {res['current_hash']}"]
+        if res["signed_hash"]:
+            same = res["signed_hash"] == res["current_hash"]
+            lines.append(f"Hash when signed  : {res['signed_hash']}")
+            lines.append("Hash comparison   : " + ("SAME" if same else "DIFFERENT (file content changed)"))
+        else:
+            lines.append("Hash when signed  : not available (no .sig.info file found)")
+        lines.append("")
+        if res["r"] is not None:
+            lines.append(f"Signature r       : {res['r']:x}")
+            lines.append(f"Signature s       : {res['s']:x}")
+        else:
+            lines.append("Signature format  : corrupted or not a DSA signature")
+        lines.append(f"Public key finger.: {res['fingerprint']}")
+        lines.append("")
+        lines.append("Note: the DSA check decides the result. The 'hash when signed' line is a")
+        lines.append("convenience from the .sig.info file and is not itself trusted.")
+        self.set_output(self.verify_out, "\n".join(lines))
+
+        add_history(os.path.basename(fp), "VALID" if res["valid"] else "INVALID", res["current_hash"])
+        self.status.set("Verification complete: " + ("VALID" if res["valid"] else "INVALID"))
+
+    # ---------- Tab 4: history ----------
+    def build_history_tab(self):
+        f = self.tab("History")
+        f.rowconfigure(0, weight=1)
+        f.columnconfigure(0, weight=1)
+
+        cols = ("date", "file", "result", "hash")
+        self.tree = ttk.Treeview(f, columns=cols, show="headings")
+        for c, t, w in (("date", "Date & Time", 150), ("file", "File", 170),
+                        ("result", "Result", 80), ("hash", "SHA-256 (first 24 chars)", 260)):
+            self.tree.heading(c, text=t)
+            self.tree.column(c, width=w, anchor="w")
+        self.tree.tag_configure("VALID", foreground=GREEN)
+        self.tree.tag_configure("INVALID", foreground=RED)
+        self.tree.grid(row=0, column=0, sticky="nsew")
+        sb = ttk.Scrollbar(f, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=sb.set)
+        sb.grid(row=0, column=1, sticky="ns")
+
+        ttk.Button(f, text="Clear History", command=self.clear_history).grid(
+            row=1, column=0, sticky="e", pady=(8, 0))
+
+    def refresh_history(self):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        for h in reversed(load_history()):
+            self.tree.insert("", "end", tags=(h["result"],),
+                             values=(h["date"], h["file"], h["result"], h.get("sha256", "")[:24] + "..."))
+
+    def clear_history(self):
+        if messagebox.askyesno("Clear history", "Delete all verification records?"):
+            save_history([])
+            self.refresh_history()
+            self.status.set("History cleared")
+
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    App(root)
+    root.mainloop()
