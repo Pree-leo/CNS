@@ -376,7 +376,7 @@ class SmoothButton(tk.Canvas):
         if self.hover_outline:
             self.current_outline = self.hover_outline
         if not self.is_pressed:
-            self.animate(self.hover_color, target_offset=0, steps=3, delay=14)
+            self.animate(self.hover_color, target_offset=-1.2, steps=3, delay=14)
 
     def _on_leave(self, e):
         self.is_hovered = False
@@ -393,11 +393,12 @@ class SmoothButton(tk.Canvas):
             return
         self.is_pressed = False
         target = self.hover_color if self.is_hovered else self.bg_color
-        self.animate(target, target_offset=0, steps=3, delay=14, callback=self.cmd)
+        target_off = -1.2 if self.is_hovered else 0
+        self.animate(target, target_offset=target_off, steps=3, delay=14, callback=self.cmd)
 
 
 class SmoothTabButton(SmoothButton):
-    """Smooth pill tab button for segmented navigation bar."""
+    """Smooth pill tab button for segmented navigation bar with hover lift."""
 
     def __init__(self, parent, text, command=None, is_active=False):
         self.is_active = is_active
@@ -411,6 +412,19 @@ class SmoothTabButton(SmoothButton):
                          font=("Segoe UI", 10, "bold"), padx=16, pady=6, radius=12,
                          outline_color=outline)
 
+    def _on_enter(self, e):
+        self.is_hovered = True
+        if not self.is_pressed:
+            target = self.hover_color if not self.is_active else "#ffffff"
+            self.animate(target, target_offset=-1.0, steps=3, delay=14)
+
+    def _on_leave(self, e):
+        self.is_hovered = False
+        self.is_pressed = False
+        self.current_outline = self.outline_color
+        target = self.bg_color if not self.is_active else "#ffffff"
+        self.animate(target, target_offset=0, steps=3, delay=14)
+
     def set_active(self, active):
         self.is_active = active
         self.bg_color = "#ffffff" if active else NAV_TRACK
@@ -420,7 +434,8 @@ class SmoothTabButton(SmoothButton):
         self.outline_color = CARD_BORDER if active else ""
         self.current_outline = self.outline_color
         target = self.bg_color if not self.is_hovered else self.hover_color
-        self.animate(target, target_offset=0, steps=3, delay=14)
+        target_off = -1.0 if self.is_hovered else 0
+        self.animate(target, target_offset=target_off, steps=3, delay=14)
 
 
 # ======================================================================
